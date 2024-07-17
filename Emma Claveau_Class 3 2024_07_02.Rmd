@@ -1,0 +1,482 @@
+---
+title: "Emma Claveau_Class 3 2024_06_21"
+output: html_document
+date: "2024-07-03"
+---
+
+```{r, set.seed(1234)}
+knitr::opts_chunk$set(cache.extra = knitr::rand_seed)
+```
+
+```{r, echo = FALSE, include= FALSE, warning = FALSE, message = FALSE}
+#' <!-- ####################################################################################################### -->
+#' <!-- ####################################################################################################### -->
+#' <!-- ##################################LOADING PACKAGES##################################################### -->
+
+tryCatch(require(pacman),finally=utils:::install.packages(pkgs='pacman',repos='http://cran.r-project.org'));
+require(pacman)
+
+#' <!-- ##if the above doesn't work, use this code## -->
+#' <!-- ##tryCatch -->
+#' <!-- #detach("package:pacman", unload = TRUE) -->
+#' <!-- #install.packages("pacman", dependencies = TRUE) -->
+#' <!-- # ## install.packages("pacman") -->
+
+pacman::p_load(digest,
+               readxl,
+               readr,
+               dplyr,
+               tidyr,
+               ggplot2,
+               knitr,
+               MASS,
+               RCurl,
+               DT,
+               modelr,
+               broom,
+               purrr,
+               pROC,
+               data.table,
+               VIM,
+               gridExtra,
+               Metrics,
+               randomForest,
+               e1071,
+               corrplot,
+               DMwR2,
+               rsample,
+               skimr,
+               psych,
+               conflicted,
+               tree,
+               tidymodels,
+               janitor,
+               GGally,
+               tidyquant,
+               doParallel,
+               Boruta,
+               correlationfunnel,
+               naniar,
+               plotly,
+               themis,
+               questionr,
+               tidylog
+)
+
+# Loading from GitHub
+pacman::p_load_current_gh("agstn/dataxray")
+```
+
+
+
+```{r, echo = FALSE, include= FALSE, warning = FALSE, message = FALSE}
+
+#' <!-- #Loading libraries -->
+
+suppressPackageStartupMessages({
+    library(conflicted) # An Alternative Conflict Resolution Strategy
+    library(readxl) # read in Excel files
+    library(readr) # read in csv files
+    library(MASS) # Functions and datasets to support Venables and Ripley, "Modern Applied Statistics with S" (4th edition, 2002).
+    library(dplyr) # A Grammar of Data Manipulation
+    library(tidyr) # Tidy Messy Data
+    library(broom) # Convert Statistical Objects into Tidy Tibbles
+    library(ggplot2) # grammar of graphics for visualization
+    library(knitr) # A General-Purpose Package for Dynamic Report Generation in R
+    library(RCurl) # General Network (HTTP/FTP/...) Client Interface for R
+    library(DT) # A Wrapper of the JavaScript Library 'DataTables'
+    library(modelr) # Modelling Functions that Work with the Pipe
+    library(purrr) # Functional Programming Tools - helps with mapping (i.e., loops)
+    library(pROC) #	Display and Analyze ROC Curves
+    library(data.table) # Fast aggregation of large data (e.g. 100GB in RAM)
+    library(VIM) # Visualization and Imputation of Missing Values
+    library(gridExtra) # Miscellaneous Functions for "Grid" Graphics
+    library(Metrics) # Evaluation Metrics for Machine Learning
+    library(randomForest) # Breiman and Cutler's Random Forests for Classification and Regression
+    library(e1071) # Misc Functions of the Department of Statistics, Probability Theory Group (Formerly: E1071), TU Wien
+    library(corrplot) # Visualization of a Correlation Matrix
+    library(DMwR2) # Functions and Data for the Second Edition of "Data Mining with R"
+    library(rsample) # General Resampling Infrastructure
+    library(skimr) # Compact and Flexible Summaries of Data
+    library(psych) # Procedures for Psychological, Psychometric, and Personality Research
+    library(tree) # Classification and Regression Trees
+    library(tidymodels) # Easily Install and Load the 'Tidymodels' Packages
+    library(janitor) # Simple Tools for Examining and Cleaning Dirty Data
+    library(GGally) # Extension to 'ggplot2'
+    library(tidyquant) # Tidy Quantitative Financial Analysis
+    library(doParallel) # Foreach Parallel Adaptor for the 'parallel' Package
+    library(Boruta) # Wrapper Algorithm for All Relevant Feature Selection
+    library(correlationfunnel) # Speed Up Exploratory Data Analysis (EDA) with the Correlation Funnel
+    library(naniar) # viewing and handling missing data
+    library(plotly) # Create interactive plots
+    library(themis) # Upsampling and Downsampling methods for tidymodels
+    library(questionr) # this will give you odds ratios
+    library(tidylog, warn.conflicts = FALSE)
+})
+
+for (f in getNamespaceExports("tidylog")) {
+    conflicted::conflict_prefer(f, "tidylog", quiet = TRUE)
+}
+
+
+conflict_prefer("tune", "tune")
+```
+
+Set your `conflict_prefer`.
+Code these from scratch during your final - 
+```{r}
+conflict_prefer("select", "dplyr")
+conflict_prefer("tune", "tune")
+conflict_prefer("chisq.test", "stats")
+conflict_prefer("filter", "dplyr")
+conflict_prefer("skewness", "PerformanceAnalytics")
+conflict_prefer("fit", "parsnip")
+conflict_prefer("rmse", "yardstick")
+conflict_prefer("map", "purrr")
+conflict_prefer("vip", "vip")
+```
+
+Load helper functions
+
+```{r}
+#From Matt Dancho DS4B 201
+
+plot_ggpairs <- function(data, color = NULL, density_alpha = 0.5) {
+    
+    color_expr <- enquo(color)
+    
+    if (rlang::quo_is_null(color_expr)) {
+        
+        g <- data %>%
+            ggpairs(lower = "blank") 
+        
+    } else {
+        
+        color_name <- quo_name(color_expr)
+        
+        g <- data %>%
+            ggpairs(mapping = aes_string(color = color_name), 
+                    lower = "blank", legend = 1,
+                    diag = list(continuous = wrap("densityDiag", 
+                                                  alpha = density_alpha))) +
+            theme(legend.position = "bottom")
+    }
+    
+    return(g)
+    
+}
+
+#From Matt Dancho DS4B 201
+plot_hist_facet <- function(data, fct_reorder = FALSE, fct_rev = FALSE, 
+                            bins = 10, fill = palette_light()[[3]], color = "white", ncol = 5, scale = "free") {
+    
+    data_factored <- data %>%
+        mutate_if(is.character, as.factor) %>%
+        mutate_if(is.factor, as.numeric) %>%
+        gather(key = key, value = value, factor_key = TRUE) 
+    
+    if (fct_reorder) {
+        data_factored <- data_factored %>%
+            mutate(key = as.character(key) %>% as.factor())
+    }
+    
+    if (fct_rev) {
+        data_factored <- data_factored %>%
+            mutate(key = fct_rev(key))
+    }
+    
+    g <- data_factored %>%
+        ggplot(aes(x = value, group = key)) +
+        geom_histogram(bins = bins, fill = fill, color = color) +
+        facet_wrap(~ key, ncol = ncol, scale = scale) + 
+        theme_tq()
+    
+    return(g)
+    
+}
+```
+
+
+
+Bring in the data. This is the IBM HR data with 1470 observations we used before.
+
+```{r}
+# library(rsample)
+# data("attrition")
+# names(attrition)
+# 
+# Data <- attrition
+stringsAsFactors = TRUE
+library(readxl)
+
+Data <- read_excel("/Users/emmamartin/Desktop/Adv Analytics/00_Data/WA_Fn-UseC_-HR-Employee-Attrition.xlsx")
+
+colnames(Data)
+
+str(Data)
+
+Data <- as.data.frame(unclass(Data)) #Change all strings from Character to Factor
+#From: https://stackoverflow.com/questions/20637360/convert-all-data-frame-character-columns-to-factors
+
+str(Data)
+```
+
+Let's put an ID variable in there in case we need it.
+
+```{r}
+Data <- Data %>% 
+    mutate(ID = row_number()) %>%
+  select(ID, everything())
+```
+
+### Create new data frame
+
+Now we will create the new df using only the features that made the cut. Since some features were removed, we will need to resplit the data (using the same seed) and create the resampling folds again as well.
+#the new data we're creating is from baruta
+```{r}
+Data <- Data %>%
+    select(ID,
+           EmployeeNumber,
+           Attrition,
+           Age,
+           BusinessTravel,
+           Department,
+           EnvironmentSatisfaction,
+           JobInvolvement,
+           JobLevel,
+           JobRole,
+           JobSatisfaction,
+           MaritalStatus,
+           MonthlyIncome,
+           NumCompaniesWorked,
+           OverTime,
+           StockOptionLevel,
+           TotalWorkingYears,
+           YearsAtCompany,
+           YearsInCurrentRole,
+           YearsSinceLastPromotion,
+           YearsWithCurrManager)
+```
+
+## Splitting the data again after removing features deemed unnecessary by Boruta
+
+```{r}
+set.seed(2020)
+data_split <- initial_split(Data, prop = 0.75, strata = "Attrition")
+
+train_data <- training(data_split)
+
+test_data <- testing(data_split)
+
+tabyl(train_data$Attrition)
+
+tabyl(test_data$Attrition)
+```
+
+## Rerun the Cross Validation V-Folds creation
+
+We need to rerun this (using the same seed as before) since we removed some features from the data. Going forward, we could probably just wait to do the split until after Boruta since we don't use the folds in Boruta.
+
+```{r}
+set.seed(2020)
+cv_folds <- vfold_cv(train_data, v = 10, strata = "Attrition") #We'll need to remember this later.
+```
+
+
+# Rerun the recipe since features have been removed
+
+```{r}
+set.seed(2020) #setting seed here because I think step_upsample may need it.
+
+#Possible way to fix step_num2factor
+#From: https://stackoverflow.com/questions/61564259/step-num2factor-usage-tidymodel-recipe-package
+
+recipe_obj <- recipe(Attrition ~ ., data = train_data) %>% 
+  update_role(ID, EmployeeNumber, new_role = "ID") %>%
+  step_mutate(JobLevel = factor(JobLevel)) %>% #step_num2factor doesn't seem to like having more than one variable, especially if they have a different number of factors. It will apply the given "Levels" to all variables listed even if that makes no sense...
+    step_mutate(StockOptionLevel = factor(StockOptionLevel)) %>% #so enter step_mutate. See link above.
+    step_YeoJohnson(
+                    YearsSinceLastPromotion, #Need to break out step_YeoJohnson into each variable as opposed to a vector for some reason. If you have skewed data and want to make it more normal - 
+                    # PerformanceRating, # removed
+                    YearsAtCompany,
+                    MonthlyIncome,
+                    TotalWorkingYears,
+                    NumCompaniesWorked,
+                    # DistanceFromHome, # removed
+                    YearsInCurrentRole,
+                    YearsWithCurrManager
+                    # PercentSalaryHike # removed
+                    ) %>%
+    step_nzv(all_numeric()) %>% #it looks like step_nzv also takes care of step_zv so these are probably redundant.
+    step_zv(all_predictors()) %>%
+    step_normalize(all_numeric()) %>%
+    step_upsample(all_outcomes(), skip = TRUE) %>% #see here (https://recipes.tidymodels.org/articles/Skipping.html) We want to upsample on training data, but not on test data
+    # step_novel(all_predictors()) %>% #creates a specification of a recipe step that will assign a previously unseen factor level to a new value. #This is throwing an error downstream. Not dealing with this right now, just commenting out.
+    step_dummy(all_nominal(), -all_outcomes()) #This only seems to work if you remove the outcome variable. In this case "Attrition"
+  
+recipe_obj
+```
+
+# Logistic Regression
+
+Now that we have our recipe ready, we will create a model.
+
+```{r}
+logit_spec <- 
+  # specify that the model is a logistic regression
+  logistic_reg(penalty=tune(), mixture=tune()) %>%
+  # select the engine/package that underlies the model
+  set_engine("glmnet") %>%
+  # Don't forget to set your mode
+  # choose either the continuous regression or binary classification mode
+  set_mode("classification")
+
+```
+#You can either set your mixture here to specify lasso, ridge or elastinet, or you can tune() to find the most optimal model.
+
+Put it all together in a workflow. This is the logistic reg wflow
+
+```{r}
+# set the workflow
+logit_wflow <- workflow() %>%
+    # add the recipe
+  add_recipe(recipe_obj)
+# %>%
+#     # add the model
+#   add_model(logit_spec)
+```
+
+Using a single call to `fit`, you can prepare (`prep()`) your model and estimate the mode
+
+Note: If you get an error here, restart R and try again.
+Keep your levels for your project!!!
+```{r}
+lambda_grid <- grid_regular(penalty(), mixture(), levels = 50) #Using grid_regular here, but we had a few options like grid_random, grid_max_entropy, and grid_latin_hypercube(). These are from the `dials` package from `tidymodels`. I encourage you to try them out and read more about what they do and why the are different.
+```
+
+
+```{r}
+doParallel::registerDoParallel()
+
+set.seed(2020)
+lasso_grid <- tune_grid(
+  logit_wflow %>%
+      add_model(logit_spec), # Adding the model
+  resamples = cv_folds, #Using our 10 folds CV for the resamples
+  grid = lambda_grid #Using our regular grid that we just created above so that we get 50 models, each using a differnt penalty
+)
+```
+
+
+```{r}
+lasso_grid %>%
+    collect_metrics()
+```
+
+```{r}
+top_models <- lasso_grid %>%
+  show_best(metric = "roc_auc", n = 15) %>%
+  arrange(penalty)
+
+top_models
+```
+
+```{r}
+top_models_best_auc <- lasso_grid %>%
+  show_best(metric = "roc_auc", n = 1) %>%
+  arrange(penalty)
+
+top_models_best_auc
+
+final_ridge<-finalize_workflow(logit_wflow%>%
+                                 add_model(logit_spec), top_models_best_auc)
+
+```
+
+#mixture=0
+#penalty= 0.037
+#Because we have a mixture of 0, this is a ridge regression.  If mixture was 1, it would have been a lasso, and anything inbetween would have indicated elastinet
+
+
+
+```{r}
+
+final_model<-finalize_workflow(logit_wflow%>%
+                        add_model(logit_spec),top_models_best_auc) #Same code as above in the last chunk, but renamed to final_model instead of final_ridge
+
+final_model_res<-final_model%>%
+  last_fit(data_split, metrics)
+
+final_model_res%>%
+  collect_metrics()
+
+
+```
+
+
+
+```{r}
+test_predictions <- final_model_res %>% collect_predictions()
+test_predictions
+```
+#Plotting the ROC curve
+```{r}
+test_predictions %>%
+  roc_curve(Attrition, .pred_No) %>%
+  ggplot(aes(x = 1 - specificity, y = sensitivity)) +
+  geom_line(size = 1.5, color = "midnightblue") +
+  geom_abline(
+    lty = 2, alpha = 0.5,
+    color = "gray50",
+    size = 1.2
+  ) 
+```
+#Plot the PR Curve
+
+```{r}
+test_predictions %>%
+  pr_curve(Attrition, .pred_No) %>%
+  ggplot(aes(x = recall, y = precision)) +
+  geom_path() + 
+  coord_equal() +
+  theme_bw()
+```
+#Confusion Matrix
+```{r}
+conflict_prefer("spec", "yardstick")
+
+
+test_predictions %>%
+  conf_mat(truth = Attrition, estimate = .pred_class)
+```
+```{r}
+test_predictions %>%
+  conf_mat(truth = Attrition, estimate = .pred_class) %>%
+  summary()
+```
+#specificity is 0.72, indicating that if we say someone is going to leave with this model, we get it right about 72% of the time, which is improved over the model we ran in class. 
+
+#fitting final model
+```{r}
+final_model<-finalize_workflow(logit_wflow%>%
+                        add_model(logit_spec),top_models_best_auc)
+
+final_model_res<-final_model%>%
+  last_fit(data_split, metrics)
+
+final_model_res%>%
+  collect_metrics()
+
+
+```
+
+
+
+From here:
+1. Select the best model using metric(s)
+2. Finalize the workflow using the best model
+3. Record the best Penalty and/or Mixture values
+4. Perform a "last fit"
+5. Collect predictions
+6. How does the confusion matrix look?
+7. Fit your final model if you like it

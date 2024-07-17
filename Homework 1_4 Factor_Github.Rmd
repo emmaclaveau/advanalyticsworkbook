@@ -1,0 +1,790 @@
+---
+title: "Hw 1 4 Factor"
+author: "Emma Claveau"
+date: "2024-06-02"
+output:
+  word_document: default
+  html_document: default
+---
+title: "Homework 1 T3"
+author: "Emma Claveau"
+date: "2024-06-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+Setting the seed:
+```{r, set.seed(2019)}
+knitr::opts_chunk$set(cache.extra = knitr::rand_seed)
+
+```
+##Loading in packages & libraries
+```{r}
+#' <!-- ####################################################################################################### -->
+#' <!-- ####################################################################################################### -->
+#' <!-- ##################################LOADING PACKAGES##################################################### -->
+
+tryCatch(require(pacman),finally=utils:::install.packages(pkgs='pacman',repos='http://cran.r-project.org'));
+require(pacman)
+
+#' <!-- ##if the above doesn't work, use this code## -->
+#' <!-- ##tryCatch -->
+#' <!-- #detach("package:pacman", unload = TRUE) -->
+#' <!-- #install.packages("pacman", dependencies = TRUE) -->
+#' <!-- # ## install.packages("pacman") -->
+
+pacman::p_load(Hmisc,
+               checkmate,
+               corrr,
+               conflicted,
+               readxl,
+               dplyr,
+               tidyr,
+               ggplot2,
+               knitr,
+               evaluate,
+               iopsych,
+               psych,
+               quantreg,
+               lavaan,
+               xtable,
+               reshape2,
+               GPArotation,
+               Amelia,
+               # esquisse,
+               expss,
+               multilevel,
+               janitor,
+               mice,
+               lmtest,
+               naniar,
+               tidylog
+)
+```
+```{r, echo = FALSE, include= FALSE, warning = FALSE, message = FALSE}
+
+#' <!-- #Loading libraries -->
+
+suppressPackageStartupMessages({
+    library(Hmisc) # Contains many functions useful for data analysis
+    library(checkmate) # Fast and Versatile Argument Checks
+    library(corrr) # Correlations in R
+    library(conflicted) # Makes it easier to handle same named functions that are in different packages
+    library(readxl) # reading in Excel files
+    library(dplyr) # data manipulation
+  library(haven) # needed to load in saq
+    library(tidyr) # Tidy Messy Data and pivot_longer and pivot_wider
+    library(ggplot2) # data visualization
+    library(knitr) # knitting data into HTML, Word, or PDF
+    library(evaluate) # Parsing and Evaluation Tools that Provide More Details than the Default
+    library(iopsych) # Methods for Industrial/Organizational Psychology
+    library(psych) # Procedures for Psychological, Psychometric, and Personality Research
+    library(quantreg) # Quantile Regression
+    library(lavaan) # confirmatory factor analysis (CFA) and structural equation modeling (SEM)
+    library(xtable) # Export Tables to LaTeX or HTML
+    library(reshape2) # transforming data between wide and long (tall)
+    library(GPArotation) # GPA Factor Rotation
+    library(Amelia) # A Program for Missing Data
+    # library(esquisse) # Explore and Visualize Your Data Interactively
+    library(expss) # Tables, Labels and Some Useful Functions from Spreadsheets and 'SPSS' Statistics
+    library(multilevel) # Multilevel Functions
+    library(janitor) # 	Simple Tools for Examining and Cleaning Dirty Data
+    library(mice) # Multivariate Imputation by Chained Equations
+    library(skimr) # Exploratory Data Analysis
+    library(lmtest) # A collection of tests, data sets, and examples for diagnostic checking in linear regression models
+    library(naniar) # helps with missing data
+    library(tidylog) # Creates a log to tell you what your tidyverse commands are doing to the data. NOTE: MAKE SURE TO ALWAYS LOAD LAST!!!
+})
+
+for (f in getNamespaceExports("tidylog")) {
+    conflicted::conflict_prefer(f, "tidylog", quiet = TRUE)
+}
+```
+##Loading in the Data from SAV file. I added the Haven library in the above code since it's a SAV file
+```{r}
+Data_HW1<-read_sav("~/Desktop/Adv Analytics/00_Data/SAQ.sav")
+
+str(Data_HW1)
+```
+##Glimpse and Column Names:
+```{r}
+glimpse(Data_HW1) #from `dplyr`
+
+colnames(Data_HW1)
+```
+##Practice exporting the Data into Excel
+  (This will be most helpful when working with Key Stakeholders that don't know R.)
+```{r}
+#Export SAV data to Excel to then import back in.
+SAVHW1 <- Data_HW1
+
+#Export to Excel
+openxlsx::write.xlsx(SAVHW1, "/Users/emmamartin/Desktop/Adv Analytics/00_Data/SAVHW1.xlsx") # Change this to the directory where you want to write the file to
+```
+
+Removing SAVHW1 from the Global Environment because we're going to work with Data_HW1 from here on out
+```{r}
+rm(SAVHW1)
+```
+
+```{r}
+#Read the data back in 
+library(readxl)
+SAVHW1 <- read_excel("/Users/emmamartin/Desktop/Adv Analytics/00_Data/SAVHW1.xlsx") # Change this to the directory where you want to read the file from
+```
+
+Remove again since it's loaded in as Data_HW1:
+```{r}
+rm(SAVHW1)
+```
+
+# Exploratory Data Analysis (EDA)
+
+## Missing Data
+
+Look for missing data using the `Amelia` package:
+```{r}
+library(Amelia)
+
+missmap(Data_HW1)
+```
+Results above show there is no missing data. 
+
+
+## Outlier Detection
+
+Identifying outliers with Mahalanobis.
+Columns are on the right side of the comma 
+
+```{r}
+Data_HW1_23 <- Data_HW1[,1:23]
+```
+The below code shows another way to do this. This is the best way because if columns change order, the dropped columns are the same.
+```{r}
+Data_HW1_23 <- Data_HW1 %>%
+    select(-c(FAC1_1, FAC2_1, FAC3_1, FAC4_1, FAC1_2, FAC2_2, FAC3_2, FAC4_2))
+```
+
+```{r}
+##outliers
+set.seed(2024)
+cutoff = qchisq(1-.001, ncol(Data_HW1_23))
+mahal = mahalanobis(Data_HW1_23,
+                    colMeans(Data_HW1_23),
+                    cov(Data_HW1_23))
+cutoff ##cutoff score
+ncol(Data_HW1_23) ##df
+summary(mahal < cutoff)
+```
+Mahal cutoff = 49.73
+DF=23
+False=97 -- This means that there are 97 outliers (97 mahal values > 49.73)
+
+
+Now we will add in the Mahal values to our data table for review. The mahal values are being added into column 24
+
+```{r}
+Data_HW1_23_mahal<- Data_HW1_23%>%
+    bind_cols(mahal) %>%
+    rename(mahal = `...24`) # renaming the new column "mahal"
+```
+
+Separating out the values that exceed the cutoff of 49.73 in a new data set
+```{r}
+Data_HW1_23_mahal_out <- Data_HW1_23_mahal %>%
+    filter(mahal > cutoff) %>%
+    arrange(desc(mahal)) # sort mahal values from most to least
+```
+
+##Removing Outliers
+
+```{r}
+Data_HW1_noout <- Data_HW1_23 %>%
+    filter(mahal < cutoff)
+```
+
+##Additivity
+
+```{r}
+correl_HW1 = cor(Data_HW1_noout, use = "pairwise.complete.obs")
+
+symnum(correl_HW1)
+
+correl_HW1
+```
+There are no 1's off of the diag.
+
+```{r}
+##assumption set up
+random_HW1 = rchisq(nrow(Data_HW1_noout), 7)
+fake_HW1 = lm(random_HW1~., # Y is predicted by all variables in the data
+          data = Data_HW1_noout) # You can use categorical variables now!
+standardized_HW1 = rstudent(fake_HW1) # Z-score all of the values to make it easier to interpret.
+fitted_HW1 = scale(fake_HW1$fitted.values)
+```
+
+```{r}
+##normality
+hist(standardized_HW1)
+```
+## Heteroscedasticity
+### Breusch-Pagan Test
+
+```{r}
+#load lmtest library
+library(lmtest)
+
+#perform Breusch-Pagan Test
+bptest(fake_HW1)
+```
+The test statistic is 18.45 and the corresponding p-value is 0.73. Since the p-value is greater than 0.05, we fail to reject the null hypothesis. We do not have sufficient evidence to say that heteroscedasticity is present in the regression model.
+
+##Q-Q Plot
+
+Check for linearity
+```{r}
+##linearity
+qqnorm(standardized_HW1)
+abline(0,1)
+```
+Looking at values -2 - +2, the values are mostly linear. The values are also mostly near 0, with less in the tails. 
+
+##Homogeneity
+
+```{r}
+##homogeneity
+plot(fitted_HW1,standardized_HW1)
+abline(0,0)
+abline(v = 0)
+```
+In the test of homogeneity there appears to be some, but minimal, skew and non-normality. We will continue forward with the data. 
+
+##Bartlett's Test
+
+This evaluates correlation adequacy. 
+```{r}
+##correlation adequacy Bartlett's test
+cortest.bartlett(correl_HW1, n = nrow(Data_HW1_noout))
+```
+## Kaiser, Meyer, Olkin Measure of Sampling Adequacy (KMO) Test
+
+Because the Bartlett test was significant, this indicates we have large enough correlations for EFA.
+
+In the below KMO, we want high values close to 1.
+
+```{r}
+##sampling adequacy KMO test
+KMO(correl_HW1[,1:23])
+```
+The overall = 0.93. KMO value of 0.8 - 1.0 indicate adequate sampling. 
+
+
+Before we run the EFA we are changing out Data with no outliers back to Data_HW1
+
+```{r}
+Data_HW1<-Data_HW1_noout
+```
+
+New Data Columns:
+```{r}
+cat(colnames(Data_HW1), sep = "\n")
+```
+
+# Exploratory Factor Analysis (EFA)
+
+Setting your seed will keep your results the same every time, as it keeps the 'random' 'constant.
+
+```{r}
+set.seed(2000)
+```
+
+Creating ID Column
+
+```{r}
+Data_HW1 <- Data_HW1 %>% 
+    mutate(ID = row_number())
+```
+
+Move the ID column to the first column
+
+```{r}
+Data_HW1 <- Data_HW1 %>%
+    dplyr::select(ID, everything())
+
+colnames(Data_HW1)
+```
+##Splitting Data
+You split the data so that you have a second, hold out sample. You can split 80/20, 70/30, or 50/50. This data will be split 50/50. 
+
+```{r}
+set.seed(2000)
+training_HW1 <- sample(Data_HW1$ID, length(Data_HW1$ID)*0.5)
+
+Data_training_HW1 <- subset(Data_HW1, ID %in% training_HW1)
+Data_test_HW1 <- subset(Data_HW1, !(ID %in% training_HW1))
+```
+
+##Histograms
+Individual Histograms, per item, to visualize data:
+```{r}
+hist(Data_training_HW1$Question_01, breaks = 5)
+hist(Data_training_HW1$Question_02, breaks = 5)
+hist(Data_training_HW1$Question_03, breaks = 5)
+hist(Data_training_HW1$Question_04, breaks = 5)
+hist(Data_training_HW1$Question_05, breaks = 5)
+hist(Data_training_HW1$Question_06, breaks = 5)
+hist(Data_training_HW1$Question_07, breaks = 5)
+hist(Data_training_HW1$Question_08, breaks = 5)
+hist(Data_training_HW1$Question_09, breaks = 5)
+hist(Data_training_HW1$Question_10, breaks = 5)
+hist(Data_training_HW1$Question_11, breaks = 5)
+hist(Data_training_HW1$Question_12, breaks = 5)
+hist(Data_training_HW1$Question_13, breaks = 5)
+hist(Data_training_HW1$Question_14, breaks = 5)
+hist(Data_training_HW1$Question_15, breaks = 5)
+hist(Data_training_HW1$Question_16, breaks = 5)
+hist(Data_training_HW1$Question_17, breaks = 5)
+hist(Data_training_HW1$Question_18, breaks = 5)
+hist(Data_training_HW1$Question_19, breaks = 5)
+hist(Data_training_HW1$Question_20, breaks = 5)
+hist(Data_training_HW1$Question_21, breaks = 5)
+hist(Data_training_HW1$Question_22, breaks = 5)
+hist(Data_training_HW1$Question_23, breaks = 5)
+```
+```{r}
+par(mfrow =c(3,3))
+hist(Data_training_HW1$Question_01, breaks = 5)
+hist(Data_training_HW1$Question_02, breaks = 5)
+hist(Data_training_HW1$Question_03, breaks = 5)
+hist(Data_training_HW1$Question_04, breaks = 5)
+hist(Data_training_HW1$Question_05, breaks = 5)
+hist(Data_training_HW1$Question_06, breaks = 5)
+hist(Data_training_HW1$Question_07, breaks = 5)
+hist(Data_training_HW1$Question_08, breaks = 5)
+hist(Data_training_HW1$Question_09, breaks = 5)
+hist(Data_training_HW1$Question_10, breaks = 5)
+hist(Data_training_HW1$Question_11, breaks = 5)
+hist(Data_training_HW1$Question_12, breaks = 5)
+hist(Data_training_HW1$Question_13, breaks = 5)
+hist(Data_training_HW1$Question_14, breaks = 5)
+hist(Data_training_HW1$Question_15, breaks = 5)
+hist(Data_training_HW1$Question_16, breaks = 5)
+hist(Data_training_HW1$Question_17, breaks = 5)
+hist(Data_training_HW1$Question_18, breaks = 5)
+hist(Data_training_HW1$Question_19, breaks = 5)
+hist(Data_training_HW1$Question_20, breaks = 5)
+hist(Data_training_HW1$Question_21, breaks = 5)
+hist(Data_training_HW1$Question_22, breaks = 5)
+hist(Data_training_HW1$Question_23, breaks = 5)
+```
+Based on the above histograms and evaluating the item verbiage, items 20 and 23 will be reverse coded. This will be done later
+
+```{r}
+library(corrr)
+
+Cor_Mat_HW1 <- Data_training_HW1 %>%
+    correlate() %>% 
+    shave() %>% # Remove upper triangle
+    fashion() # Print in nice format
+
+print(Cor_Mat_HW1)
+```
+
+Correlation viewed as a flattened matrix:
+```{r}
+#Flatten Correlation Matrix Function
+
+flattenCorrMatrix_HW1 <- function(cormat, pmat, nmat) {
+    ut <- upper.tri(cormat)
+    data.frame(
+        row = rownames(cormat)[row(cormat)[ut]],
+        column = rownames(cormat)[col(cormat)[ut]],
+        cor  =(cormat)[ut],
+        p = pmat[ut],
+        n = nmat[ut]
+    )
+}
+```
+
+```{r}
+#install.packages("Hmisc", dependencies = TRUE)
+library(Hmisc)
+```
+
+```{r}
+#As a matrix
+Data_training_HW1_MAT <- as.matrix(Data_training_HW1)
+```
+
+```{r}
+library(Hmisc)
+#install.packages("checkmate", dependencies = TRUE)
+library(checkmate)
+res <- rcorr(Data_training_HW1_MAT)
+print(res)
+```
+
+```{r}
+library(corrr)
+
+Data_Flat_Cor_Mat_stretch_HW1 <- Data_training_HW1 %>%
+    select(-ID) %>% # remove ID variable since we don't need it
+    correlate() %>% # calculate correlations
+    stretch() %>% # make it tall
+    fashion() # round it
+
+Data_Flat_Cor_Mat_stretch_HW1
+```
+#Parallel Analysis
+Make sure that you're only selecting columns with items. If you have ID columns or other demographic information, you'll need to exclude them, selecting only what you need. 
+
+```{r}
+library(psych)
+fa.parallel(Data_training_HW1[c(2:24)])
+```
+
+It looks as though we may have a 5 factor solution.
+
+But but we'll start with a 3 factor solution because n=5 and n-2=3. 
+
+NOTE: The variable naming convention is as follows:
+* fa = Factor Analysis
+* ml = Maximum Likelihood (the method of factor analysis we are using)
+* 3 = the number of factors we think are in the data
+* trn = the training data (as opposed to the test data where we would run a follow up CFA to "confirm" the factor structure)
+* HW1 = Homework 1 Data 
+
+
+```{r}
+fa_ml_3_trn_HW1 <- fa(Data_training_HW1[c(2:24)], nfactors = 3, fm="ml", rotate="oblimin")
+
+print(fa_ml_3_trn_HW1)
+
+print(fa_ml_3_trn_HW1$loadings, cutoff = .3)
+```
+RMSEA = 0.06 (good fit) RMSR= 0.04 (good fit) TLI less than 0.90 (poor fit)
+BIC=-356.6
+Question 1 has cross loadings, and Question 22 and 23 do not load on any factor greater than 0.3
+
+Four Factor Model
+```{r}
+fa_ml_4_trn_HW1 <- fa(Data_training_HW1[c(2:24)], nfactors = 4, fm="ml", rotate="oblimin")
+
+print(fa_ml_4_trn_HW1)
+
+print(fa_ml_4_trn_HW1$loadings, cutoff = .3)
+```
+RMSEA=0.05 (good fit) RMSR = 0.03 (good fit) TLI = 0.93 (acceptable fit) Mean item complexity = 1.5
+BIC=-567.81
+
+Question_15 does not load on any Factor greater than 0.3
+There are no cross loadings with the 4 Factor model, but we will run a 5 factor model to see if fit index improves.
+
+5 Factor Model:
+```{r}
+fa_ml_5_trn_HW1 <- fa(Data_training_HW1[c(2:24)], nfactors = 5, fm="ml", rotate="oblimin")
+
+print(fa_ml_5_trn_HW1)
+
+print(fa_ml_5_trn_HW1$loadings, cutoff = .3)
+```
+
+Question 15 and 12 do not load on any factor greater than 0.3
+RMSR = 0.02 (good fit) RMSEA = 0.04 (good fit) TLI = 0.95 (good fit) Mean item complexity = 1.5
+BIC=-648.59
+
+6 Factor
+```{r}
+fa_ml_6_trn_HW1 <- fa(Data_training_HW1[c(2:24)], nfactors = 6, fm="ml", rotate="oblimin")
+
+print(fa_ml_6_trn_HW1)
+
+print(fa_ml_6_trn_HW1$loadings, cutoff = .3)
+```
+Question 10, 14, and 15 did not load within a factor. removing and rerunning 6 factor model.
+
+Remove Items 15 and 12 that do not load on the 5 Factor Model 
+
+```{r}
+TEST_Data_training_HW1_MOD_12 <- Data_training_HW1 %>%
+    dplyr::select(-c(Question_15))
+
+colnames(TEST_Data_training_HW1_MOD_12)
+```
+Rerunning the 4 factor model with item 15 removed
+```{r}
+TEST_fa_ml_4_trn_HW1_MOD_12 <- fa(TEST_Data_training_HW1_MOD_12[c(2:23)], nfactors = 4, fm="ml", rotate="oblimin") # make sure the [2:XX] reflects the correct columns after removing items
+
+print(TEST_fa_ml_4_trn_HW1_MOD_12)
+
+print(TEST_fa_ml_4_trn_HW1_MOD_12$loadings, cutoff = .3)
+```
+RMSR = 0.03, RMSEA = 0.046, TLI = 0.93 
+BIC = -524.48
+Mean item complexity= 1.4
+
+
+
+Putting the data into the excel so that my Key Stakeholders can see what's actually going on 
+
+```{r}
+TEST_fa_ml_HW1_12_4faclds <- as.data.frame(unclass(TEST_fa_ml_4_trn_HW1_MOD_12$loadings))
+
+TEST_fa_ml_HW1_12_4faclds
+```
+Rounding the dataframe to 3 decimals:
+
+```{r}
+TEST_fa_ml_HW1_12_4faclds <- as.data.frame(round(unclass(TEST_fa_ml_4_trn_HW1_MOD_12$loadings),3))
+
+TEST_fa_ml_HW1_12_4faclds
+```
+
+```{r}
+openxlsx::write.xlsx(TEST_fa_ml_HW1_12_4faclds, "/Users/emmamartin/Desktop/Adv Analytics/00_Data/TEST_fa_ml_HW1_12_4faclds.xlsx")
+```
+
+Don't forget to add names for your items:
+
+```{r}
+TEST_fa_ml_HW1_4_12_factor_loadings <- as.data.frame(round(unclass(TEST_fa_ml_4_trn_HW1_MOD_12$loadings), 3)) %>%
+    tibble::rownames_to_column("items") # "items" is what we want to call the column. You can make this anything
+# Resource: 
+# https://stackoverflow.com/questions/29511215/how-can-i-convert-row-names-into-the-first-column
+
+```
+
+```{r}
+openxlsx::write.xlsx(TEST_fa_ml_HW1_4_12_factor_loadings, "/Users/emmamartin/Desktop/Adv Analytics/00_Data/TEST12__fa_ml_items_4faclds.xlsx")
+```
+
+Reverse Code Attempt using Data_training_HW1_MOD
+
+```{r}
+library(tidyverse)
+
+# Reverse code the 'satisfaction' column
+TEST_Data_training_HW1_MOD_Reverse<- TEST_Data_training_HW1_MOD_12 %>%
+  mutate(Q23_reversed = 6 - Question_23,)
+
+# Print the result
+print(TEST_Data_training_HW1_MOD_Reverse)
+```
+
+
+
+##Scale Building
+
+Below code creates a new data from eliminating columns with any demographic or 'ID' columns. Aka - anything not pertinent to the scale 
+```{r}
+library(dplyr)
+SAV_items_TEST12 <- TEST_Data_training_HW1_MOD_Reverse %>%
+    dplyr::select(-c(ID, Question_23))
+```
+
+Before we go any further, we're going to look for items that may need to be reverse coded
+
+
+```{r}
+
+library(skimr)
+
+skim(SAV_items_TEST12)
+```
+Based on the histograms, we're going to reverse score Question 20 and Questions 23 (already done above)
+
+
+
+
+```{r}
+SAV_keys_list <- list(Computers = c(6, 17, 13, 7, 14, 10),
+                      Math= c(8, 11, 16),
+                      Stats = c(1, 4, 5, 20, 15, 19, 12), 
+                      Feeling = c(2, 3, 9, 22, 18, 21))
+
+
+SAV_keys <- make.keys(SAV_items_TEST12, SAV_keys_list, item.labels = colnames(SAV_items_TEST12))
+```
+
+Score the items:
+
+```{r}
+scores <- scoreItems(SAV_keys, SAV_items_TEST12, impute = "none", 
+                         min = 1, max = 5, digits = 3)
+
+head(scores$scores)
+
+scores_df_HW1 <- as.data.frame(scores$scores)
+```
+Notice that I used the $ designator for a variable within a df the scores variable within the scores df, wrapped it with `as.data.frame` and then made it into a new df called scores_df.
+
+Now we'll split out each factor individually to do scale analysis. We can use `select` again and pair it with the helper function
+```{r}
+#' Now let's split out the data into factors for easier analysis
+ 
+COMP_HW1_4 <- SAV_items_TEST12 %>%
+    dplyr::select(c(6, 17, 13, 7, 14, 10))
+
+MATH_HW1_4 <- SAV_items_TEST12 %>%
+    dplyr::select(c(8, 11, 16))
+
+STA_HW1_4 <- SAV_items_TEST12 %>%
+    dplyr::select(c(1, 4, 5, 20, 15, 19, 12))
+
+FEE_HW1_4 <- SAV_items_TEST12 %>%
+    dplyr::select(c(9, 2, 22, 18, 21))
+
+```
+
+##Scale Reliability
+
+Computers Factor: 
+
+Creating an individual list so that we can evaluate scale reliabilitys are listed as 1-6 because they will be 1-6 for the individual scale. When you pull out the individual factor scale, you will see that you've pulled in the correct questions - if not, look for your error. 
+
+```{r}
+
+SAV_keys_list <- list(Computers=c(1, 2, 3, 4, 5, 6))
+
+SAV_keys <- make.keys(COMP_HW1_4, SAV_keys_list, item.labels = colnames(COMP_HW1_4))
+
+```
+
+```{r}
+COMP_HW1_4_ALPHA <- psych::alpha(x = COMP_HW1_4[, abs(SAV_keys_list$Computers)], keys = SAV_keys)
+```
+
+```{r}
+COMP_HW1_4_total <- round(as.data.frame(COMP_HW1_4_ALPHA$total), 3)
+COMP_HW1_4_alpha_drop <- round(as.data.frame(COMP_HW1_4_ALPHA$alpha.drop), 3)
+COMP_HW1_4_item_stat <- round(as.data.frame(COMP_HW1_4_ALPHA$item.stats), 3)
+
+COMP_HW1_4_ALPHA
+```
+Std alpha: 0.82
+Indiv std alphas are good!
+No r.drop values exceed the std alpha value - keeping all items
+
+
+* raw_alpha is alpha based upon the covariance.
+* std.alpha is the standardized alpha based upon the correlations
+* G6(smc) is Guttman's Lamda 6 reliability
+* average_r is the average interitem correlation
+* median_r is the median interitem correlation
+* raw.r is the correlation of each item with the total score, not corrected for item overlap
+* std.r is the correlation of each item with the total score (not corrected for item overlap) if the items were all standardized
+* r.cor is item whole correlation corrected for item overlap and scale reliability
+* r.drop is item whole correlation for this item against the scale without this item
+
+
+
+```{r}
+SAV_keys_list <- list(Math=c(1, 2, 3))
+
+SAV_keys <- make.keys(MATH_HW1_4, SAV_keys_list, item.labels = colnames(MATH_HW1_4))
+```
+
+```{r}
+MATH_HW1_4_ALPHA <- psych::alpha(x = MATH_HW1_4[, abs(SAV_keys_list$Math)], keys = SAV_keys)
+```
+
+```{r}
+MATH_HW1_4_total <- round(as.data.frame(MATH_HW1_4_ALPHA$total), 3)
+MATH_HW1_4_alpha_drop <- round(as.data.frame(MATH_HW1_4_ALPHA$alpha.drop), 3)
+MATH_HW1_4_item_stat <- round(as.data.frame(MATH_HW1_4_ALPHA$item.stats), 3)
+
+MATH_HW1_4_ALPHA
+```
+Overall std alpha= 0.83 
+Individual std alphas are good!
+Since the `r.drop` for all of the items is lower than the reliability of the overall scale, we will keep all of the items.
+
+Stats:
+```{r}
+
+SAV_keys_list <- list(Stats=c(1, 2, 3, 4, 5, 6, 7))
+
+SAV_keys <- make.keys(STA_HW1_4, SAV_keys_list, item.labels = colnames(STA_HW1_4))
+
+```
+
+```{r}
+STA_HW1_4_ALPHA <- psych::alpha(x = STA_HW1_4[, abs(SAV_keys_list$Stats)], keys = SAV_keys)
+```
+
+```{r}
+STA_HW1_4_total <- round(as.data.frame(STA_HW1_4_ALPHA$total), 3)
+STA_HW1_4_alpha_drop <- round(as.data.frame(STA_HW1_4_ALPHA$alpha.drop), 3)
+STA_HW1_4_item_stat <- round(as.data.frame(STA_HW1_4_ALPHA$item.stats), 3)
+
+STA_HW1_4_ALPHA
+
+
+```
+Stats std. alpha = 0.80, great! None of the individual r.drop values are greater than the reliability of the overall scale, so we will keep all the items.
+
+
+
+Feeling:
+```{r}
+
+SAV_keys_list <- list(Feeling=c(1, 2, 3, 4, 5))
+
+SAV_keys <- make.keys(FEE_HW1_4, SAV_keys_list, item.labels = colnames(FEE_HW1_4))
+
+```
+
+```{r}
+FEE_HW1_4_ALPHA <- psych::alpha(x = FEE_HW1_4[, abs(SAV_keys_list$Feeling)], keys = SAV_keys)
+```
+
+```{r}
+FEE_HW1_4_total <- round(as.data.frame(FEE_HW1_4_ALPHA$total), 3)
+FEE_HW1_4_alpha_drop <- round(as.data.frame(FEE_HW1_4_ALPHA$alpha.drop), 3)
+FEE_HW1_4_item_stat <- round(as.data.frame(FEE_HW1_4_ALPHA$item.stats), 3)
+
+FEE_HW1_4_ALPHA
+
+
+```
+Overall std alpha = 0.48. No r.drop values are lower than the std alpha value. Question 3 has the lowest individual standard alpha. However, removing the item results in a reduced overal std alpha = 0.35. Like with the above item I will keep all items but advise that this scale is not considered to be reliable and should not be used. If Key Stakeholders insist these items are important to the overall scale, I will again advise that these should not be used to make any decisions where liability can come into play. Information pertaining to any law suits that could arise from inappropriate use of such scale will be provided. Ultimately, Key stakeholders will make their decision whether or not to use the scale, knowing all the risks at hand, though I highly advise against it.
+
+
+##Citation of ChatGPT resource:
+#chatgpt.com used to confirm reverse coding reviewed in lecture worked:
+#Prompt: "You are an expert at coding in RStudio. How do you reverse code a column using         tidyverse"
+#Output Response:library(tidyverse) Sample data frame df <- tibble(id = 1:5,satisfaction = c(1, 2, 3, 4, 5)  # Example Likert scale data) 
+# Reverse code the 'satisfaction' columndf <- df %>%mutate(satisfaction_reversed = 6 - satisfaction) # Print the result print(df)"
+
+#Notes: Results from class (adding a '-' in front of the column number) were replicated using the above code. 
+
+
+```{r ref.label = knitr::all_labels(), echo = TRUE, eval = FALSE}
+
+```
+
+
+
