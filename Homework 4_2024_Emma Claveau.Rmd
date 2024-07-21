@@ -1,0 +1,878 @@
+---
+title: "Homework 4"
+output: html_notebook
+---
+
+This is a tutorial on `gdscrapR` which is a web scraper for Glassdoor Reviews.
+
+```{r}
+#Tutorial on gdscrapeR
+#From: https://github.com/mguideng/gdscrapeR
+#June 2019
+
+
+
+############################################################################################
+############################################################################################
+# Clear workspace 
+rm(list = ls())
+############################################################################################
+
+#######################################################################################################
+#######################################################################################################
+##################################LOADING PACKAGES#####################################################
+
+################################################################################
+#Do tryCatch here
+
+tryCatch(require(pacman),finally=utils:::install.packages(pkgs='pacman',repos='http://cran.r-project.org'));
+require(pacman)
+
+##if the above doesn't work, use this code##
+##tryCatch
+#detach("package:pacman", unload = TRUE)
+#install.packages("pacman", dependencies = TRUE)
+# ## install.packages("pacman")
+pacman::p_load(openxlsx, 
+               tidyverse, 
+               devtools,
+               conflicted,
+               lubridate,
+               sentimentr)
+
+#Loading libraries
+library(openxlsx)
+library(tidyverse)
+library(devtools)
+library(conflicted)
+library(lubridate)
+library(sentimentr)
+
+
+# devtools::install_github("mguideng/gdscrapeR")
+
+# library(gdscrapeR)
+```
+
+```{r}
+conflict_prefer("filter", "dplyr")
+```
+
+
+#Loading in Honeywell Data
+
+```{r}
+library(readr)
+Data <- read_csv("/Users/emmamartin/Desktop/Adv Analytics/00_Data/glassdoortest1.csv")
+```
+
+Identifying column names
+Note: You don't have to use the "\n", but it is nice for visualization. If you leave it off, the column names would be displayed horizontally
+
+```{r}
+cat(colnames(Data), sep = ",\n")
+```
+
+Changing Column X1 to ID
+
+```{r}
+Data <- Data %>%
+    rename(ID = "...1")
+```
+
+
+
+We will be keeping the original df Data, untouched. This is helpful because we will be slicing, dicing, scattering, etc. to the df in order to split out the text in various ways.
+
+The code below is creating two new data frames. One data frame with contain 'pros' and the other will contain 'cons'.
+
+```{r}
+#' <!--####################################################################################################### -->
+#' <!--####################################################################################################### -->
+#' <!--####################################################################################################### -->
+#' <!--####################################################################################################### -->
+#' <!--####################################################################################################### -->
+#' <!--#####################BRUTE FORCE TOPIC CLASSIFICATION USING REGEX###################################### -->
+
+comments_df_pros <- Data %>%
+    select(c(ID, pros)) %>%
+    filter(!is.na(pros)) %>%
+    rename('comments' = 'pros')
+
+comments_df_cons <- Data %>%
+    select(c(ID, cons)) %>%
+    filter(!is.na(cons)) %>%
+    rename('comments' = 'cons')
+ 
+
+
+```
+
+```{r}
+comments_df_pros <- comments_df_pros %>%
+  as_tibble() %>%
+  mutate(comments = str_replace_all(comments, "\uFFFD", "")) #This may have fixed our problem, it may have not...be careful
+
+
+comments_df_cons <- comments_df_cons %>%
+  as_tibble() %>%
+  mutate(comments = str_replace_all(comments, "\uFFFD", ""))
+#From: https://stackoverflow.com/questions/42626243/r-remove-unicode-replacement-character-from-a-string
+```
+
+
+Convert everything to lowercase for simplicity.
+
+```{r}
+#Converting to lower case
+
+comments_df_pros <- comments_df_pros %>%
+    mutate(comments = tolower(comments))
+
+
+comments_df_cons <- comments_df_cons %>%
+    mutate(comments = tolower(comments))
+```
+
+Remove all line breaks.
+
+```{r}
+#Remove all line breaks
+
+#From: https://stackoverflow.com/questions/21781014/remove-all-line-breaks-enter-symbols-from-the-string-using-r
+
+comments_df_pros$comments <- gsub("[\r\n]", "", comments_df_pros$comments)
+
+comments_df_pros <- comments_df_pros %>%
+    select(ID, comments) %>%
+    na.omit()
+
+
+comments_df_cons$comments <- gsub("[\r\n]", "", comments_df_cons$comments)
+
+comments_df_cons <- comments_df_cons %>%
+    select(ID, comments) %>%
+    na.omit()
+```
+
+Now let's create our first known topic. We'll go with benefits for now.
+
+Common ones you may want to look at are:
+
+* Benefits
+* Career advancement
+* Compensation
+* Direct Manager
+* General Management 
+* Safety
+
+What others can you think of?
+
+You can also do subcategories such as:
+
+* Benefits-Health
+* Benefits-Paid Time Off
+
+What others can you think of?
+
+Could you build out your own classifer with ~20 or so meta categories and subcategories as needed?
+
+```{r}
+#Creating a beginning using `now` from lubridate.
+#This is helpful when you get to several categories using a brute force search so that you (and others if they run you script) know about how long it will take to run.
+
+#After we run everything, we will create `end_time <- now()` along with `print(difftime(end_time, start_time))` as the last line of code after everything we are concerned about has run.
+
+start_time <- now()
+```
+
+#Benefits_PTO
+```{r}
+#' <!--####################################################################################################### -->
+#' <!--####################################################################################################### -->
+#' <!--#################################### BENEFITS ######################################################### -->
+
+#From: https://stackoverflow.com/questions/26319567/use-grepl-to-search-either-of-multiple-substrings-in-a-text
+#From: https://stackoverflow.com/questions/5823503/pattern-matching-using-a-wildcard
+#From: https://stackoverflow.com/questions/31421077/r-wildcard-matching-for-certain-number-of-terms
+#From: https://www.regular-expressions.info/rlanguage.html
+
+
+benefits_pto <- c('\\bvacation\\b', #this will only get the word "vacation" and nothing else
+              '(?=.*paid)(?=.*(?:time))', #This will get paid, but only if it occurs with time, in the same comment
+                    '\\bpto\\b', #this will only get the word "pto". 
+              '\\bpaid\\s?time\\s?off\\b', #this will get the word "paid time off" or "paidtimeoff" as the \\s? indicates zero or one whitespace character.
+              '^.*vacation.*$' #This will get anything with 'vacation' as the root word. 
+            
+                     )
+
+benefits_pattern <- paste(benefits_pto, collapse = "|") #This puts everything from what you put into `benefits_pto` together into a pattern to search for.
+
+benefits_comments_pros <- as.data.frame(comments_df_pros[grep(benefits_pattern, comments_df_pros$comments, value = FALSE, perl = TRUE),]) # This takes the pattern you just created and searches over the entire column of "comments" in the comments_df_pros
+
+TEST_PRO <- comments_df_pros %>%
+    mutate(benefits_pto = ifelse(comments %in% benefits_comments_pros$comments, "Y",
+                             "N")) #This creates a new object, TEST, from comments_df_pros and if any of the comments in the "comments" column match (%in%) the comments exactly, they get a "Y". If not they get a "N" in the new "benefits" column
+
+
+#Now Cons
+benefits_pattern <- paste(benefits_pto, collapse = "|") 
+
+benefits_comments_cons <- as.data.frame(comments_df_cons[grep(benefits_pattern, comments_df_cons$comments, value = FALSE, perl = TRUE),])
+
+TEST_CON <- comments_df_cons %>%
+    mutate(benefits_pto = ifelse(comments %in% benefits_comments_cons$comments, "Y",
+                             "N"))
+
+```
+
+#Career advancement
+
+```{r}
+#' <!--####################################################################################################### -->
+#' <!--####################################################################################################### -->
+#' <!--#################################### BENEFITS_INSURANCE ############################################### -->
+
+#From: https://stackoverflow.com/questions/26319567/use-grepl-to-search-either-of-multiple-substrings-in-a-text
+#From: https://stackoverflow.com/questions/5823503/pattern-matching-using-a-wildcard
+#From: https://stackoverflow.com/questions/31421077/r-wildcard-matching-for-certain-number-of-terms
+#From: https://www.regular-expressions.info/rlanguage.html
+
+career_advancement <- c('\\bpromot\\b',
+                        '^.*promot.*$',
+                        '^.*advanc.*$',
+                        '\\bcareer\\s?path\\b',
+                        '(?=.*opportunit.*$)(?=.*(?:career|job|))'
+                        )
+
+career_advancement_pattern <- paste(career_advancement, collapse = "|") #This puts everything from what you put into career adv together into a pattern to search for.
+
+career_advancement_comments_pros <- as.data.frame(comments_df_pros[grep(career_advancement_pattern, comments_df_pros$comments, value = FALSE, perl = TRUE),]) # This takes the pattern you just created and searches over the entire column of "comments" in the comments_df_pro
+
+TEST_PRO <- TEST_PRO %>%
+    mutate(career_advancement = ifelse(comments %in% career_advancement_comments_pros$comments, "Y",
+                             "N")) #This creates a new object, TEST, from Comments_df_pro and if any of the comments in the "comments" column match (%in%) the comments exactly, they get a "Y". If not they get a "N" in the new column
+
+
+#Repeat for Cons
+career_advancement_comments_cons <- as.data.frame(comments_df_cons[grep(career_advancement_pattern, comments_df_cons$comments, value = FALSE, perl = TRUE),]) 
+
+TEST_CON <- TEST_CON %>%
+    mutate(career_advancement = ifelse(comments %in% career_advancement_comments_cons$comments, "Y",
+                             "N")) 
+
+```
+
+
+#Dental Benefits
+
+```{r}
+#' <!--####################################################################################################### -->
+#' <!--####################################################################################################### -->
+#' <!--################################# COMPENSATION ######################################################## -->
+
+#From: https://stackoverflow.com/questions/26319567/use-grepl-to-search-either-of-multiple-substrings-in-a-text
+#From: https://stackoverflow.com/questions/5823503/pattern-matching-using-a-wildcard
+#From: https://stackoverflow.com/questions/31421077/r-wildcard-matching-for-certain-number-of-terms
+#From: https://www.regular-expressions.info/rlanguage.html
+
+dental_benefits <- c('\\bdental\\b', 
+              '^.*dent.*$',
+              '\\btooth\\b'
+                     )
+
+#What else should we add?
+ 
+
+dental_benefits_pattern <- paste(dental_benefits, collapse = "|") #This puts everything from what you put into `dental benefits` together into a pattern to search for.
+
+dental_benefits_comments_pro <- as.data.frame(comments_df_pros[grep(dental_benefits_pattern, comments_df_pros$comments, value = FALSE, perl = TRUE),]) # This takes the pattern you just created and search over the entire column of "comments" in the Comments_df
+
+TEST_PRO <- TEST_PRO %>%
+    mutate(dental_benefits = ifelse(comments %in% dental_benefits_comments_pro$comments, "Y",
+                             "N")) #This modifies the existing object, TEST, from TEST we created before and if any of the comments in the "comments" column match (%in%) the comments exactly, they get a "Y". If not they get a "N" in the new column
+
+#Repeat for cons
+
+dental_benefits_comments_con <- as.data.frame(comments_df_cons[grep(dental_benefits_pattern, comments_df_cons$comments, value = FALSE, perl = TRUE),]) 
+
+TEST_CON <- TEST_CON%>%
+    mutate(dental_benefits = ifelse(comments %in% dental_benefits_comments_con$comments, "Y",
+                             "N"))
+
+
+
+
+```
+
+#Medical Benefits
+```{r}
+medical_benefits <- c('\\bmedical\\b',
+                  '\\bdeductible\\b',   
+              '^.*doctor.*$',
+              '^.*copay.*$',
+               '^.*healthcare.*$',
+              '(?=.*health)(?=.*(?:insurance))',
+              '\\bhealth\\s?care\\b'
+                     )
+ 
+
+medical_benefits_pattern <- paste(medical_benefits, collapse = "|") #This puts everything from what you put into `medical benefits` together into a pattern to search for.
+
+medical_benefits_comments_pro <- as.data.frame(comments_df_pros[grep(medical_benefits_pattern, comments_df_pros$comments, value = FALSE, perl = TRUE),]) # This takes the pattern you just created and search over the entire column of "comments" in the Comments_df
+
+TEST_PRO <- TEST_PRO %>%
+    mutate(medical_benefits = ifelse(comments %in% medical_benefits_comments_pro$comments, "Y",
+                             "N")) #This modifies the existing object, TEST, from TEST we created before and if any of the comments in the "comments" column match (%in%) the comments exactly, they get a "Y". If not they get a "N" in the new column
+
+#Repeat Cons
+medical_benefits_comments_con <- as.data.frame(comments_df_cons[grep(medical_benefits_pattern, comments_df_cons$comments, value = FALSE, perl = TRUE),]) 
+
+TEST_CON <- TEST_CON%>%
+    mutate(medical_benefits = ifelse(comments %in% medical_benefits_comments_con$comments, "Y",
+                             "N"))
+```
+#Maternity_Paternity
+```{r}
+maternity_paternity_benefits <- c('\\bmaternity\\b',
+                                  '\\bpaternity\\b',
+              '^.*birth.*$',
+              '(?=.*parent.*)(?=.*(?:leave))'
+                     )
+ 
+
+maternity_paternity_benefits_pattern <- paste(maternity_paternity_benefits, collapse = "|") #This puts everything from what you put into `maternity paternity benefits` together into a pattern to search for.
+
+maternity_paternity_benefits_comments_pro <- as.data.frame(comments_df_pros[grep(maternity_paternity_benefits_pattern, comments_df_pros$comments, value = FALSE, perl = TRUE),]) # This takes the pattern you just created and search over the entire column of "comments" in the Comments_df
+
+TEST_PRO <- TEST_PRO %>%
+    mutate(maternity_paternity_benefits = ifelse(comments %in% maternity_paternity_benefits_comments_pro$comments, "Y",
+                             "N")) #This modifies the existing object, TEST, from TEST we created before and if any of the comments in the "comments" column match (%in%) the comments exactly, they get a "Y". If not they get a "N" in the new column
+
+#Repeat Cons
+maternity_paternity_benefits_comments_con <- as.data.frame(comments_df_cons[grep(maternity_paternity_benefits_pattern, comments_df_cons$comments, value = FALSE, perl = TRUE),]) 
+
+TEST_CON <- TEST_CON%>%
+    mutate(maternity_paternity_benefits = ifelse(comments %in% maternity_paternity_benefits_comments_con$comments, "Y",
+                             "N"))
+```
+#Retirement
+```{r}
+retirement_benefits <- c('\\b401k\\b',
+                                  '\\bretirement\\b',
+              '(?=.*match.*)(?=.*(?:contribution))'
+                     )
+ 
+
+retirement_benefits_pattern <- paste(retirement_benefits, collapse = "|") #This puts everything from what you put into `retirement benefits` together into a pattern to search for.
+
+retirement_benefits_comments_pro <- as.data.frame(comments_df_pros[grep(retirement_benefits_pattern, comments_df_pros$comments, value = FALSE, perl = TRUE),]) # This takes the pattern you just created and search over the entire column of "comments" in the Comments_df
+
+TEST_PRO <- TEST_PRO %>%
+    mutate(retirement_benefits = ifelse(comments %in% retirement_benefits_comments_pro$comments, "Y",
+                             "N")) #This modifies the existing object, TEST, from TEST we created before and if any of the comments in the "comments" column match (%in%) the comments exactly, they get a "Y". If not they get a "N" in the new column
+
+#Repeat CONS
+retirement_benefits_comments_con <- as.data.frame(comments_df_cons[grep(retirement_benefits_pattern, comments_df_cons$comments, value = FALSE, perl = TRUE),]) 
+
+TEST_CON <- TEST_CON%>%
+    mutate(retirement_benefits = ifelse(comments %in% retirement_benefits_comments_con$comments, "Y",
+                             "N"))
+```
+
+#Psychological Safefy
+```{r}
+psychological_safety <- c('\\bpsychological\\b',
+                                  '(?=.*concerns)(?=.*(?:listen))',
+              '(?=.*psych.*)(?=.*(?:safety))',
+              '^.*humiliat.*$',
+              '^.*risk.*$'
+                     )
+ 
+
+psychological_safety_pattern <- paste(psychological_safety, collapse = "|") #This puts everything from what you put into `psychological safety` together into a pattern to search for.
+
+psychological_safety_comments_pro <- as.data.frame(comments_df_pros[grep(psychological_safety_pattern, comments_df_pros$comments, value = FALSE, perl = TRUE),]) # This takes the pattern you just created and search over the entire column of "comments" in the Comments_df
+
+TEST_PRO <- TEST_PRO %>%
+    mutate(psychological_safety = ifelse(comments %in% psychological_safety_comments_pro$comments, "Y",
+                             "N")) #This modifies the existing object, TEST, from TEST we created before and if any of the comments in the "comments" column match (%in%) the comments exactly, they get a "Y". If not they get a "N" in the new column
+
+
+#Repeat Cons
+psychological_safety_comments_con <- as.data.frame(comments_df_cons[grep(psychological_safety_pattern, comments_df_cons$comments, value = FALSE, perl = TRUE),])
+
+TEST_CON <- TEST_CON%>%
+    mutate(psychological_safety = ifelse(comments %in% psychological_safety_comments_con$comments, "Y",
+                             "N"))
+```
+
+#career_training
+```{r}
+career_training <- c('\\bdevelopment\\b',
+                     '\\blms\\b',
+                                  '(?=.*learning)(?=.*(?:management))'
+                     )
+ 
+
+career_training_pattern <- paste(career_training, collapse = "|") #This puts everything from what you put into `career training` together into a pattern to search for.
+
+career_training_comments_pro <- as.data.frame(comments_df_pros[grep(career_training_pattern, comments_df_pros$comments, value = FALSE, perl = TRUE),]) # This takes the pattern you just created and search over the entire column of "comments" in the Comments_df
+
+TEST_PRO <- TEST_PRO %>%
+    mutate(career_training = ifelse(comments %in% career_training_comments_pro$comments, "Y",
+                             "N")) #This modifies the existing object, TEST, from TEST we created before and if any of the comments in the "comments" column match (%in%) the comments exactly, they get a "Y". If not they get a "N" in the new  column
+
+#Reapeat CONS
+
+career_training_comments_con <- as.data.frame(comments_df_cons[grep(career_training_pattern, comments_df_cons$comments, value = FALSE, perl = TRUE),]) 
+
+TEST_CON <- TEST_CON%>%
+    mutate(career_training = ifelse(comments %in% career_training_comments_con$comments, "Y",
+                             "N"))
+```
+
+#work_balance_hours
+```{r}
+work_balance_hours <- c('\\bhours\\b',
+                     '\\bover\\s?time\\b',
+                     '\\bburn\\s?out\\b'
+                     )
+ 
+
+work_balance_hours_pattern <- paste(work_balance_hours, collapse = "|") #This puts everything from what you put into `work balance hours` together into a pattern to search for.
+
+work_balance_hours_comments_pro <- as.data.frame(comments_df_pros[grep(work_balance_hours_pattern, comments_df_pros$comments, value = FALSE, perl = TRUE),]) # This takes the pattern you just created and search over the entire column of "comments" in the Comments_df
+
+TEST_PRO <- TEST_PRO %>%
+    mutate(work_balance_hours = ifelse(comments %in% work_balance_hours_comments_pro$comments, "Y",
+                             "N")) #This modifies the existing object, TEST, from TEST we created before and if any of the comments in the "comments" column match (%in%) the comments exactly, they get a "Y". If not they get a "N" in the new column
+
+#Repeat CONS
+work_balance_hours_comments_con <- as.data.frame(comments_df_cons[grep(work_balance_hours_pattern, comments_df_cons$comments, value = FALSE, perl = TRUE),])
+
+
+TEST_CON <- TEST_CON%>%
+    mutate(work_balance_hours = ifelse(comments %in% work_balance_hours_comments_con$comments, "Y",
+                             "N"))
+```
+
+#work remote
+```{r}
+work_balance_remote <- c('\\bremote\\b'
+                     )
+ 
+
+work_balance_remote_pattern <- paste(work_balance_remote, collapse = "|") #This puts everything from what you put into `work balance remote' together into a pattern to search for.
+
+work_balance_remote_comments_pro <- as.data.frame(comments_df_pros[grep(work_balance_remote_pattern, comments_df_pros$comments, value = FALSE, perl = TRUE),]) # This takes the pattern you just created and search over the entire column of "comments" in the Comments_df
+
+TEST_PRO <- TEST_PRO %>%
+    mutate(work_balance_remote = ifelse(comments %in% work_balance_remote_comments_pro$comments, "Y",
+                             "N")) #This modifies the existing object, TEST, from TEST we created before and if any of the comments in the "comments" column match (%in%) the comments exactly, they get a "Y". If not they get a "N" in the new column
+
+#Repeat CONS
+
+work_balance_remote_comments_con <- as.data.frame(comments_df_cons[grep(work_balance_remote_pattern, comments_df_cons$comments, value = FALSE, perl = TRUE),]) 
+
+TEST_CON <- TEST_CON%>%
+    mutate(work_balance_remote = ifelse(comments %in% work_balance_remote_comments_con$comments, "Y",
+                             "N"))
+```
+
+```{r}
+work_balance_hybrid <- c('\\bhybrid\\b',
+                         '(?=.*flexib.*)(?=.*(?:time))',
+                         '(?=.*flexib.*)(?=.*(?:hours))'
+                     )
+ 
+
+work_balance_hybrid_pattern <- paste(work_balance_hybrid, collapse = "|") #This puts everything from what you put into `work balance hybrid` together into a pattern to search for.
+
+work_balance_hybrid_comments_pro <- as.data.frame(comments_df_pros[grep(work_balance_hybrid_pattern, comments_df_pros$comments, value = FALSE, perl = TRUE),]) # This takes the pattern you just created and search over the entire column of "comments" in the Comments_df
+
+TEST_PRO <- TEST_PRO %>%
+    mutate(work_balance_hybrid = ifelse(comments %in% work_balance_hybrid_comments_pro$comments, "Y",
+                             "N")) #This modifies the existing object, TEST, from TEST we created before and if any of the comments in the "comments" column match (%in%) the comments exactly, they get a "Y". If not they get a "N" in the new column
+
+#Repeat CONS
+
+work_balance_hybrid_comments_con <- as.data.frame(comments_df_cons[grep(work_balance_hybrid_pattern, comments_df_cons$comments, value = FALSE, perl = TRUE),]) 
+
+TEST_CON <- TEST_CON%>%
+    mutate(work_balance_hybrid = ifelse(comments %in% work_balance_hybrid_comments_con$comments, "Y",
+                             "N"))
+```
+
+#In-Office
+```{r}
+work_balance_office <- c('\\bcommute\\b',
+                           '(?=.*in)(?=.*(?:office))',
+                         '(?=.*in)(?=.*(?:person))'
+                         
+                     )
+ 
+
+work_balance_office_pattern <- paste(work_balance_office, collapse = "|") #This puts everything from what you put into `work balance office` together into a pattern to search for.
+
+work_balance_office_comments_pro <- as.data.frame(comments_df_pros[grep(work_balance_office_pattern, comments_df_pros$comments, value = FALSE, perl = TRUE),]) # This takes the pattern you just created and search over the entire column of "comments" in the Comments_df
+
+TEST_PRO <- TEST_PRO %>%
+    mutate(work_balance_office = ifelse(comments %in% work_balance_office_comments_pro$comments, "Y",
+                             "N")) #This modifies the existing object, TEST, from TEST we created before and if any of the comments in the "comments" column match (%in%) the comments exactly, they get a "Y". If not they get a "N" in the new column
+
+#Repeat CONS
+
+work_balance_office_comments_con <- as.data.frame(comments_df_cons[grep(work_balance_office_pattern, comments_df_cons$comments, value = FALSE, perl = TRUE),]) 
+
+TEST_CON <- TEST_CON%>%
+    mutate(work_balance_office = ifelse(comments %in% work_balance_office_comments_con$comments, "Y",
+                             "N"))
+```
+#culture
+```{r}
+culture <- c('\\bculture\\b',
+             '(?=.*office)(?=.*(?:climate))',
+             '(?=.*work)(?=.*(?:climate))'
+                         )
+ 
+
+culture_pattern <- paste(culture, collapse = "|") #This puts everything from what you put into `culture` together into a pattern to search for.
+
+culture_comments_pro <- as.data.frame(comments_df_pros[grep(culture_pattern, comments_df_pros$comments, value = FALSE, perl = TRUE),]) # This takes the pattern you just created and search over the entire column of "comments" in the Comments_df
+
+TEST_PRO <- TEST_PRO %>%
+    mutate(culture = ifelse(comments %in% culture_comments_pro$comments, "Y",
+                             "N")) #This modifies the existing object, TEST, from TEST we created before and if any of the comments in the "comments" column match (%in%) the comments exactly, they get a "Y". If not they get a "N" in the new column
+
+#Repeat Cons
+
+culture_comments_con <- as.data.frame(comments_df_cons[grep(culture_pattern, comments_df_cons$comments, value = FALSE, perl = TRUE),]) # This takes the pattern you just created and search over the entire column of "comments" in the Comments_df
+
+TEST_CON <- TEST_CON%>%
+    mutate(culture = ifelse(comments %in% culture_comments_con$comments, "Y",
+                             "N"))
+```
+#DEI
+```{r}
+dei <- c('\\bdiversity\\b',
+         '\\binclusion\\b',
+         '\\bequity\\b',
+         '\\bfavoritism\\b',
+         '\\bdei\\b'
+                         )
+ 
+
+dei_pattern <- paste(dei, collapse = "|") #This puts everything from what you put into `dei` together into a pattern to search for.
+
+dei_comments_pro <- as.data.frame(comments_df_pros[grep(dei_pattern, comments_df_pros$comments, value = FALSE, perl = TRUE),]) # This takes the pattern you just created and search over the entire column of "comments" in the Comments_df
+
+TEST_PRO <- TEST_PRO %>%
+    mutate(dei = ifelse(comments %in% dei_comments_pro$comments, "Y",
+                             "N")) #This modifies the existing object, TEST, from TEST we created before and if any of the comments in the "comments" column match (%in%) the comments exactly, they get a "Y". If not they get a "N" in the new column
+
+#Repeat CONS
+
+dei_comments_con <- as.data.frame(comments_df_cons[grep(dei_pattern, comments_df_cons$comments, value = FALSE, perl = TRUE),]) 
+
+TEST_CON <- TEST_CON%>%
+    mutate(dei = ifelse(comments %in% dei_comments_con$comments, "Y",
+                             "N"))
+```
+#management_direct
+```{r}
+management_direct <- c('\\boss\\b',
+         '(?=.*direct)(?=.*(?:manager))'
+                         )
+ 
+
+management_direct_pattern <- paste(management_direct, collapse = "|") #This puts everything from what you put into `management direct` together into a pattern to search for.
+
+management_direct_comments_pro <- as.data.frame(comments_df_pros[grep(management_direct_pattern, comments_df_pros$comments, value = FALSE, perl = TRUE),]) # This takes the pattern you just created and search over the entire column of "comments" in the Comments_df
+
+TEST_PRO <- TEST_PRO %>%
+    mutate(management_direct = ifelse(comments %in% management_direct_comments_pro$comments, "Y",
+                             "N")) #This modifies the existing object, TEST, from TEST we created before and if any of the comments in the "comments" column match (%in%) the comments exactly, they get a "Y". If not they get a "N" in the new column
+
+#Repeat CONS
+
+management_direct_comments_con <- as.data.frame(comments_df_cons[grep(management_direct_pattern, comments_df_cons$comments, value = FALSE, perl = TRUE),]) 
+
+TEST_CON <- TEST_CON%>%
+    mutate(management_direct = ifelse(comments %in% management_direct_comments_con$comments, "Y",
+                             "N"))
+```
+#Management_general
+```{r}
+management_general <- c('\\bmanagement\\b',
+          '(?=.*manage.*)(?=.*(?:general))'
+                         )
+ 
+
+management_general_pattern <- paste(management_general, collapse = "|") #This puts everything from what you put into `management general` together into a pattern to search for.
+
+management_general_comments_pro <- as.data.frame(comments_df_pros[grep(management_general_pattern, comments_df_pros$comments, value = FALSE, perl = TRUE),]) # This takes the pattern you just created and search over the entire column of "comments" in the Comments_df
+
+TEST_PRO <- TEST_PRO %>%
+    mutate(management_general = ifelse(comments %in% management_general_comments_pro$comments, "Y",
+                             "N")) #This modifies the existing object, TEST, from TEST we created before and if any of the comments in the "comments" column match (%in%) the comments exactly, they get a "Y". If not they get a "N" in the new column
+
+#Repeat CONS
+management_general_comments_con <- as.data.frame(comments_df_cons[grep(management_general_pattern, comments_df_cons$comments, value = FALSE, perl = TRUE),])
+
+TEST_CON <- TEST_CON%>%
+    mutate(management_general = ifelse(comments %in% management_general_comments_con$comments, "Y",
+                             "N"))
+```
+#C-suite
+```{r}
+management_csuite <- c('\\bceo\\b',
+                       '\\bcfo\\b',
+                       '\\bcoo\\b',
+                       '\\bchro\\b',
+          '(?=.*executive)(?=.*(?:leadership))',
+          '(?=.*executive)(?=.*(?:team))'
+                         )
+ 
+
+management_csuite_pattern <- paste(management_csuite, collapse = "|") #This puts everything from what you put into `Management csuite` together into a pattern to search for.
+
+management_csuite_comments_pro <- as.data.frame(comments_df_pros[grep(management_csuite_pattern, comments_df_pros$comments, value = FALSE, perl = TRUE),]) # This takes the pattern you just created and search over the entire column of "comments" in the Comments_df
+
+TEST_PRO <- TEST_PRO %>%
+    mutate(management_csuite = ifelse(comments %in% management_csuite_comments_pro$comments, "Y",
+                             "N")) #This modifies the existing object, TEST, from TEST we created before and if any of the comments in the "comments" column match (%in%) the comments exactly, they get a "Y". If not they get a "N" in the new column
+
+#Repeat Cons
+management_csuite_comments_con <- as.data.frame(comments_df_cons[grep(management_csuite_pattern, comments_df_cons$comments, value = FALSE, perl = TRUE),]) 
+
+TEST_CON <- TEST_CON%>%
+    mutate(management_csuite = ifelse(comments %in% management_csuite_comments_con$comments, "Y",
+                             "N"))
+```
+#Compensation_general
+```{r}
+compensation_general <- c('\\bsalary\\b',
+                       '\\bsalaries\\b',
+                       '\\bwage\\b',
+                       '\\bpay\\b',
+          '(?=.*raise)(?=.*(?:pay|salary|comp.*|wage))'
+                         )
+ 
+
+compensation_general_pattern <- paste(compensation_general, collapse = "|") #This puts everything from what you put into `compensation general` together into a pattern to search for.
+
+compensation_general_comments_pro <- as.data.frame(comments_df_pros[grep(compensation_general_pattern, comments_df_pros$comments, value = FALSE, perl = TRUE),]) # This takes the pattern you just created and search over the entire column of "comments" in the Comments_df
+
+TEST_PRO <- TEST_PRO %>%
+    mutate(compensation_general = ifelse(comments %in% compensation_general_comments_pro$comments, "Y",
+                             "N")) #This modifies the existing object, TEST, from TEST we created before and if any of the comments in the "comments" column match (%in%) the comments exactly, they get a "Y". If not they get a "N" in the new "compensation general" column
+
+#Repeat CONS
+compensation_general_comments_con <- as.data.frame(comments_df_cons[grep(compensation_general_pattern, comments_df_cons$comments, value = FALSE, perl = TRUE),]) 
+
+TEST_CON <- TEST_CON%>%
+    mutate(compensation_general = ifelse(comments %in% compensation_general_comments_con$comments, "Y",
+                             "N"))
+```
+
+#Compensation_extra
+```{r}
+compensation_extra <- c('\\bbonus\\b',
+                       '\\bbonuses\\b',
+                      '(?=.*gift)(?=.*(?:card))',
+          '(?=.*incentive)(?=.*(?:plan))'
+                         )
+ 
+
+compensation_extra_pattern <- paste(compensation_extra, collapse = "|") #This puts everything from what you put into `compensation extra` together into a pattern to search for.
+
+compensation_extra_comments_pro <- as.data.frame(comments_df_pros[grep(compensation_extra_pattern, comments_df_pros$comments, value = FALSE, perl = TRUE),]) # This takes the pattern you just created and search over the entire column of "comments" in the Comments_df
+
+TEST_PRO <- TEST_PRO %>%
+    mutate(compensation_extra = ifelse(comments %in% compensation_extra_comments_pro$comments, "Y",
+                             "N")) #This modifies the existing object, TEST, from TEST we created before and if any of the comments in the "comments" column match (%in%) the comments exactly, they get a "Y". If not they get a "N" in the new "compensation extra" column
+
+#Repeat CONS
+compensation_extra_comments_con <- as.data.frame(comments_df_cons[grep(compensation_extra_pattern, comments_df_cons$comments, value = FALSE, perl = TRUE),]) 
+
+TEST_CON <- TEST_CON%>%
+    mutate(compensation_extra = ifelse(comments %in% compensation_extra_comments_con$comments, "Y",
+                             "N"))
+```
+
+#Stock Benefits
+```{r}
+benefits_stock <- c('\\bstock\\b',
+                      '(?=.*stock)(?=.*(?:market))',
+          '(?=.*stock)(?=.*(?:option.*))'
+                         )
+ 
+
+benefits_stock_pattern <- paste(benefits_stock, collapse = "|") #This puts everything from what you put into 'benefits stock` together into a pattern to search for.
+
+benefits_stock_comments_pro <- as.data.frame(comments_df_pros[grep(benefits_stock_pattern, comments_df_pros$comments, value = FALSE, perl = TRUE),]) # This takes the pattern you just created and search over the entire column of "comments" in the Comments_df
+
+TEST_PRO <- TEST_PRO %>%
+    mutate(benefits_stock = ifelse(comments %in% benefits_stock_comments_pro$comments, "Y",
+                             "N")) #This modifies the existing object, TEST, from TEST we created before and if any of the comments in the "comments" column match (%in%) the comments exactly, they get a "Y". If not they get a "N" in the new column
+
+#Repeat CONS
+
+benefits_stock_comments_con <- as.data.frame(comments_df_cons[grep(benefits_stock_pattern, comments_df_cons$comments, value = FALSE, perl = TRUE),]) # This takes the pattern you just created and search over the entire column of "comments" in the Comments_df
+
+TEST_CON <- TEST_CON%>%
+    mutate(benefits_stock = ifelse(comments %in% benefits_stock_comments_con$comments, "Y",
+                             "N"))
+```
+
+If you wanted to roll up sub categories into a meta-category you can do something like this.
+
+```{r, eval = FALSE}
+#TEST <- TEST %>%
+   # mutate(Category_Overall = ifelse(subcat_1 == "Y" | subcat_2 == "Y" | subcat_3 == "Y", "Y", "N"))
+
+```
+
+If you want to do an Other category, you could do something like this.
+
+```{r}
+#' <!--####################################################################################################### -->
+#' <!--####################################################################################################### -->
+#' <!--################################ OTHER ################################################################ -->
+
+#From: https://stackoverflow.com/questions/32514453/ifelse-and-in-applied-to-rows-of-a-dataframe-in-r
+
+TEST_PRO <- TEST_PRO %>%
+    mutate(Other = apply(TEST_PRO, 1, function(y){ ifelse("Y" %in% y, "N", "Y")}))
+
+TEST_CON <- TEST_CON %>%
+    mutate(Other = apply(TEST_CON, 1, function(y){ ifelse("Y" %in% y, "N", "Y")}))
+
+end_time <- now()
+
+print(difftime(end_time, start_time))
+```
+
+
+
+Once you are done you can write to Excel!
+
+Let's go ahead and make it fancy while we are here.
+
+#PRO COMMENTS TO EXCEL
+```{r}
+##################################
+# Comment Report
+##################################
+
+#Creating df for header
+
+INTRO <- c("Honeywell",
+
+         "Data Source: Glassdoor",
+
+         "Data As Of: Q3 2024",
+
+         "Prepared on: 7/11/2024",
+
+         "Prepared by: Emma Claveau")
+
+wb <- openxlsx::createWorkbook() #Create a work book
+
+
+#Comment Report
+
+addWorksheet(wb, "Comment Report") #name the worksheet in Excel
+
+writeData(wb, "Comment Report", INTRO) #Write your INTRO
+
+
+#Create style
+
+style1 <- createStyle(fontColour = "#000080", textDecoration = "Bold") #Choose your custom font color (https://www.rgbtohex.net/) and make it bold. Call it style1
+
+ 
+
+addStyle(wb, style = style1, rows= 1:5, cols = 1, sheet = "Comment Report") #add this style to your worksheet. Tell it which rows and columns
+
+writeData(wb, "Comment Report", TEST_PRO, startRow = 8) #put your DF (in this case TEST_PRO into the sheet under your writing (row 8)
+
+hs1 <- createStyle(textDecoration = "Bold") #create a new style for heading
+
+addStyle(wb, style = hs1, rows = 8, cols = 1:nrow(TEST_PRO), sheet = "Comment Report") #Tell it where to go. We'll do 50 columns in this case so it can grow if needed
+
+#Freeze Panes
+
+#Also check here: https://stackoverflow.com/questions/37677326/applying-style-to-all-sheets-of-a-workbook-using-openxlsx-package-in-r
+
+freezePane(wb, "Comment Report", firstActiveRow = 9) #Freeze those panes. You know you want to. Tell it where to start.
+
+#Add filter
+
+addFilter(wb, "Comment Report", row = 8, cols = 1:nrow(TEST_PRO)) #Add your filter as well. If you're trying to impress, you might as well go all in :)
+
+#Now we'll do a fancy save by customizing the file name using paste0 and system time. We'll also assume this was for the previous month. You'll also need to make this path the one you want on your computer. 
+
+
+saveWorkbook(wb, paste0("/Users/emmamartin/Desktop/Adv Analytics/00_Data/Comment_Report_PRO", format(floor_date(Sys.Date()-months(1), "month"), "%B_%Y") , ".xlsx"), overwrite = TRUE)
+```
+
+#CON COMMENTS TO EXCEL
+```{r}
+##################################
+# Comment Report
+##################################
+
+#Creating df for header
+
+INTRO <- c("Honeywell",
+
+         "Data Source: Glassdoor",
+
+         "Data As Of: Q3 2024",
+
+         "Prepared on: 7/11/2024",
+
+         "Prepared by: Emma Claveau")
+
+wb <- openxlsx::createWorkbook() #Create a work book
+
+
+#Comment Report
+
+addWorksheet(wb, "Comment Report") #name the worksheet in Excel
+
+writeData(wb, "Comment Report", INTRO) #Write your INTRO
+
+
+#Create style
+
+style1 <- createStyle(fontColour = "#000080", textDecoration = "Bold") #Choose your custom font color (https://www.rgbtohex.net/) and make it bold. Call it style1
+
+ 
+
+addStyle(wb, style = style1, rows= 1:5, cols = 1, sheet = "Comment Report") #add this style to your worksheet. Tell it which rows and columns
+
+writeData(wb, "Comment Report", TEST_CON, startRow = 8) #put your DF (in this case TEST_CON) into the sheet under your writing (row 8)
+
+hs1 <- createStyle(textDecoration = "Bold") #create a new style for heading
+
+addStyle(wb, style = hs1, rows = 8, cols = 1:nrow(TEST_CON), sheet = "Comment Report") #Tell it where to go. We'll do 50 columns in this case so it can grow if needed
+
+#Freeze Panes
+
+#Also check here: https://stackoverflow.com/questions/37677326/applying-style-to-all-sheets-of-a-workbook-using-openxlsx-package-in-r
+
+freezePane(wb, "Comment Report", firstActiveRow = 9) #Freeze those panes. You know you want to. Tell it where to start.
+
+#Add filter
+
+addFilter(wb, "Comment Report", row = 8, cols = 1:nrow(TEST_CON)) #Add your filter as well. If you're trying to impress, you might as well go all in :)
+
+#Now we'll do a fancy save by customizing the file name using paste0 and system time. We'll also assume this was for the previous month. You'll also need to make this path the one you want on your computer. 
+
+
+saveWorkbook(wb, paste0("/Users/emmamartin/Desktop/Adv Analytics/00_Data/Comment_Report_CON", format(floor_date(Sys.Date()-months(1), "month"), "%B_%Y") , ".xlsx"), overwrite = TRUE)
+```
+
